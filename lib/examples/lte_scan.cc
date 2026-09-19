@@ -6,7 +6,6 @@
 #include <cstring>
 
 #include <fstream>
-#include <deque>
 #include <set>
 #include <iostream>
 #include <sstream>
@@ -18,10 +17,15 @@
 
 struct scan_result {
   uint32_t earfcn = 0;
+  uint32_t band = 0;
   double frequency_hz = 0.0;
   int exit_code = -1;
   std::string status;
   std::string json;
+
+  bool have_mib = false;
+  bool have_sib1 = false;
+  bool have_sib5 = false;
 
   uint32_t pci = 0;
   uint32_t nof_prb = 0;
@@ -40,12 +44,13 @@ static void usage(const char* prog)
 {
   std::fprintf(stderr,
                "Usage: %s (--earfcn LIST | --seed EARFCN) [--gain DB] [--attempts N] "
-               "[--subframes N]\n"
+               "[--subframes N] [--json FILE]\n"
                "\n"
                "Options:\n"
                "  -e, --earfcn LIST    Comma-separated LTE DL EARFCNs\n"
               "  -s, --seed EARFCN    Discover carriers recursively via SIB5\n"
-               "  -g, --gain DB        RF gain passed to pdsch_ue (default: 40)\n"
+               "  -J, --json FILE      Write complete scan result as JSON\n"
+              "  -g, --gain DB        RF gain passed to pdsch_ue (default: 40)\n"
                "  -X, --attempts N     Cell-search attempts per carrier (default: 2)\n"
                "  -n, --subframes N    Max subframes after cell detection "
                "(default: 5000)\n"
@@ -124,6 +129,38 @@ static std::string json_string(const std::string& json,
   return json.substr(p, e - p);
 }
 
+
+static bool json_bool(const std::string& json,
+                      const std::string& key,
+                      bool* value)
+{
+  const std::string needle = "\"" + key + "\":";
+  size_t p = json.find(needle);
+
+  if (p == std::string::npos) {
+    return false;
+  }
+
+  p += needle.size();
+
+  while (p < json.size() &&
+         (json[p] == ' ' || json[p] == '\t' ||
+          json[p] == '\r' || json[p] == '\n')) {
+    ++p;
+  }
+
+  if (json.compare(p, 4, "true") == 0) {
+    *value = true;
+    return true;
+  }
+
+  if (json.compare(p, 5, "false") == 0) {
+    *value = false;
+    return true;
+  }
+
+  return false;
+}
 
 static bool json_number(const std::string& json,
                         const std::string& key,
@@ -333,6 +370,7 @@ static scan_result probe(const std::string& pdsch_ue,
   }
 
   r.frequency_hz = frequency_hz;
+  r.band = band;
 
   char tmp_template[] = "/tmp/lte_scan_XXXXXX";
   int fd = mkstemp(tmp_template);
@@ -377,6 +415,10 @@ static scan_result probe(const std::string& pdsch_ue,
     return r;
   }
 
+  json_bool(r.json, "have_mib", &r.have_mib);
+  json_bool(r.json, "have_sib1", &r.have_sib1);
+  json_bool(r.json, "have_sib5", &r.have_sib5);
+
   if (r.status == "ok" || r.status == "partial") {
     json_u32(r.json, "pci", &r.pci);
     json_u32(r.json, "nof_prb", &r.nof_prb);
@@ -394,10 +436,133 @@ static scan_result probe(const std::string& pdsch_ue,
   return r;
 }
 
+static int write_scan_json(const std::string& filename,
+                           const std::string& mode,
+                           uint32_t seed_earfcn,
+                           double gain,
+                           uint32_t attempts,
+                           uint32_t subframes,
+                           const std::vector<scan_result>& results)
+{
+  const std::string tmp_filename = filename + ".tmp";
+  FILE* f = std::fopen(tmp_filename.c_str(), "w");
+
+  if (!f) {
+    return -1;
+  }
+
+  size_t ok_count = 0;
+  size_t partial_count = 0;
+
+  for (const scan_result& r : results) {
+    if (r.status == "ok") {
+      ++ok_count;
+    } else if (r.status == "partial") {
+      ++partial_count;
+    }
+  }
+
+  std::fprintf(f, "{\n");
+  std::fprintf(f, "  \"mode\":\"%s\"", mode.c_str());
+
+  if (mode == "seed") {
+    std::fprintf(f, ",\n  \"seed_earfcn\":%u", seed_earfcn);
+  }
+
+  std::fprintf(f, ",\n  \"gain_db\":%.1f", gain);
+  std::fprintf(f, ",\n  \"attempts\":%u", attempts);
+  std::fprintf(f, ",\n  \"subframes\":%u", subframes);
+
+  std::fprintf(f, ",\n  \"summary\":{");
+  std::fprintf(f, "\"carriers_probed\":%zu", results.size());
+  std::fprintf(f, ",\"cells_detected\":%zu",
+               ok_count + partial_count);
+  std::fprintf(f, ",\"cells_identified\":%zu", ok_count);
+  std::fprintf(f, ",\"partial\":%zu", partial_count);
+  std::fprintf(f, "}");
+
+  std::fprintf(f, ",\n  \"results\":[\n");
+
+  for (size_t i = 0; i < results.size(); ++i) {
+    const scan_result& r = results[i];
+
+    std::fprintf(f, "    {");
+    std::fprintf(f, "\"status\":\"%s\"", r.status.c_str());
+    std::fprintf(f, ",\"earfcn\":%u", r.earfcn);
+    std::fprintf(f, ",\"frequency_hz\":%.0f", r.frequency_hz);
+    std::fprintf(f, ",\"exit_code\":%d", r.exit_code);
+
+    std::fprintf(f, ",\"have_mib\":%s",
+                 r.have_mib ? "true" : "false");
+    std::fprintf(f, ",\"have_sib1\":%s",
+                 r.have_sib1 ? "true" : "false");
+    std::fprintf(f, ",\"have_sib5\":%s",
+                 r.have_sib5 ? "true" : "false");
+
+    if (r.status == "ok" || r.status == "partial") {
+      std::fprintf(f, ",\"band\":%u", r.band);
+      std::fprintf(f, ",\"pci\":%u", r.pci);
+      std::fprintf(f, ",\"nof_prb\":%u", r.nof_prb);
+      std::fprintf(f, ",\"bandwidth_mhz\":%.1f", r.bandwidth_mhz);
+      std::fprintf(f, ",\"snr_db\":%.1f", r.snr_db);
+
+      /*
+       * SIB1-derived identity fields are meaningful only when
+       * SIB1 was actually decoded.
+       */
+      if (r.have_sib1) {
+        std::fprintf(f, ",\"tac\":%u", r.tac);
+        std::fprintf(f, ",\"eci\":%u", r.eci);
+        std::fprintf(f, ",\"enb_id\":%u", r.enb_id);
+        std::fprintf(f, ",\"cell_id\":%u", r.cell_id);
+
+        std::fprintf(f, ",\"plmns\":[");
+        for (size_t j = 0; j < r.plmns.size(); ++j) {
+          if (j != 0) {
+            std::fprintf(f, ",");
+          }
+          std::fprintf(f, "\"%s\"", r.plmns[j].c_str());
+        }
+        std::fprintf(f, "]");
+      }
+
+      if (r.have_sib5) {
+        std::fprintf(f, ",\"neighbors\":[");
+        for (size_t j = 0; j < r.neighbors.size(); ++j) {
+          if (j != 0) {
+            std::fprintf(f, ",");
+          }
+          std::fprintf(f, "%u", r.neighbors[j]);
+        }
+        std::fprintf(f, "]");
+      }
+    }
+
+    std::fprintf(f, "}%s\n",
+                 i + 1 == results.size() ? "" : ",");
+  }
+
+  std::fprintf(f, "  ]\n");
+  std::fprintf(f, "}\n");
+
+  if (std::fclose(f) != 0) {
+    unlink(tmp_filename.c_str());
+    return -1;
+  }
+
+  if (std::rename(tmp_filename.c_str(), filename.c_str()) != 0) {
+    unlink(tmp_filename.c_str());
+    return -1;
+  }
+
+  return 0;
+}
+
 int main(int argc, char** argv)
 {
   std::string earfcn_arg;
   std::string seed_arg;
+  std::string json_output;
   double gain = 40.0;
   uint32_t attempts = 2;
   uint32_t subframes = 5000;
@@ -417,6 +582,8 @@ int main(int argc, char** argv)
       earfcn_arg = require_value(arg.c_str());
     } else if (arg == "-s" || arg == "--seed") {
       seed_arg = require_value(arg.c_str());
+    } else if (arg == "-J" || arg == "--json") {
+      json_output = require_value(arg.c_str());
     } else if (arg == "-g" || arg == "--gain") {
       gain = std::strtod(require_value(arg.c_str()), nullptr);
     } else if (arg == "-X" || arg == "--attempts") {
@@ -613,8 +780,9 @@ int main(int argc, char** argv)
 
   std::printf("\n");
   std::printf("Scan complete: %zu carriers probed, "
-              "%zu cells found, %zu partial\n",
+              "%zu cells detected, %zu identified, %zu partial\n",
               results.size(),
+              ok_count + partial_count,
               ok_count,
               partial_count);
 
@@ -686,6 +854,28 @@ int main(int argc, char** argv)
                   r.enb_id,
                   r.cell_id,
                   r.status.c_str());
+    }
+  }
+
+  if (!json_output.empty()) {
+    const std::string mode = seed_mode ? "seed" : "earfcn";
+    uint32_t seed_earfcn = 0;
+
+    if (seed_mode && !earfcns.empty()) {
+      seed_earfcn = earfcns.front();
+    }
+
+    if (write_scan_json(json_output,
+                        mode,
+                        seed_earfcn,
+                        gain,
+                        attempts,
+                        subframes,
+                        results) != 0) {
+      std::fprintf(stderr,
+                   "Could not write scan JSON: %s\n",
+                   json_output.c_str());
+      return 1;
     }
   }
 
