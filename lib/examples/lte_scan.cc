@@ -20,6 +20,7 @@ struct scan_result {
   uint32_t band = 0;
   double frequency_hz = 0.0;
   int exit_code = -1;
+  uint32_t probe_count = 1;
   std::string status;
   std::string json;
 
@@ -44,7 +45,7 @@ static void usage(const char* prog)
 {
   std::fprintf(stderr,
                "Usage: %s (--earfcn LIST | --seed EARFCN) [--gain DB] [--attempts N] "
-               "[--subframes N] [--json FILE]\n"
+               "[--subframes N] [--retries N] [--json FILE]\n"
                "\n"
                "Options:\n"
                "  -e, --earfcn LIST    Comma-separated LTE DL EARFCNs\n"
@@ -54,7 +55,9 @@ static void usage(const char* prog)
                "  -X, --attempts N     Cell-search attempts per carrier (default: 2)\n"
                "  -n, --subframes N    Max subframes after cell detection "
                "(default: 5000)\n"
-               "  -h, --help           Show this help\n",
+               "  -R, --retries N      Additional decode retries in seed mode "
+              "(default: 1)\n"
+              "  -h, --help           Show this help\n",
                prog);
 }
 
@@ -436,12 +439,62 @@ static scan_result probe(const std::string& pdsch_ue,
   return r;
 }
 
+static void merge_probe_result(scan_result* dst,
+                               const scan_result& src)
+{
+  dst->probe_count += src.probe_count;
+
+  /*
+   * Keep the most recent successful RF measurement.
+   */
+  if (src.have_mib) {
+    dst->pci = src.pci;
+    dst->nof_prb = src.nof_prb;
+    dst->bandwidth_mhz = src.bandwidth_mhz;
+    dst->snr_db = src.snr_db;
+    dst->have_mib = true;
+  }
+
+  /*
+   * SIB1 contains the cell identity. Once decoded, do not lose it
+   * because a later retry happened to miss SIB1.
+   */
+  if (src.have_sib1) {
+    dst->tac = src.tac;
+    dst->eci = src.eci;
+    dst->enb_id = src.enb_id;
+    dst->cell_id = src.cell_id;
+    dst->plmns = src.plmns;
+    dst->have_sib1 = true;
+  }
+
+  /*
+   * SIB5 is independently useful for recursive discovery.
+   */
+  if (src.have_sib5) {
+    dst->neighbors = src.neighbors;
+    dst->have_sib5 = true;
+  }
+
+  if (dst->have_sib1) {
+    dst->status = "ok";
+    dst->exit_code = 0;
+  } else if (dst->have_mib) {
+    dst->status = "partial";
+    dst->exit_code = 0;
+  } else {
+    dst->status = src.status;
+    dst->exit_code = src.exit_code;
+  }
+}
+
 static int write_scan_json(const std::string& filename,
                            const std::string& mode,
                            uint32_t seed_earfcn,
                            double gain,
                            uint32_t attempts,
                            uint32_t subframes,
+                           uint32_t retries,
                            const std::vector<scan_result>& results)
 {
   const std::string tmp_filename = filename + ".tmp";
@@ -472,6 +525,7 @@ static int write_scan_json(const std::string& filename,
   std::fprintf(f, ",\n  \"gain_db\":%.1f", gain);
   std::fprintf(f, ",\n  \"attempts\":%u", attempts);
   std::fprintf(f, ",\n  \"subframes\":%u", subframes);
+  std::fprintf(f, ",\n  \"retries\":%u", retries);
 
   std::fprintf(f, ",\n  \"summary\":{");
   std::fprintf(f, "\"carriers_probed\":%zu", results.size());
@@ -491,6 +545,7 @@ static int write_scan_json(const std::string& filename,
     std::fprintf(f, ",\"earfcn\":%u", r.earfcn);
     std::fprintf(f, ",\"frequency_hz\":%.0f", r.frequency_hz);
     std::fprintf(f, ",\"exit_code\":%d", r.exit_code);
+    std::fprintf(f, ",\"probe_count\":%u", r.probe_count);
 
     std::fprintf(f, ",\"have_mib\":%s",
                  r.have_mib ? "true" : "false");
@@ -566,6 +621,7 @@ int main(int argc, char** argv)
   double gain = 40.0;
   uint32_t attempts = 2;
   uint32_t subframes = 5000;
+  uint32_t retries = 1;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -588,6 +644,11 @@ int main(int argc, char** argv)
       gain = std::strtod(require_value(arg.c_str()), nullptr);
     } else if (arg == "-X" || arg == "--attempts") {
       attempts =
+          static_cast<uint32_t>(std::strtoul(require_value(arg.c_str()),
+                                             nullptr,
+                                             10));
+    } else if (arg == "-R" || arg == "--retries") {
+      retries =
           static_cast<uint32_t>(std::strtoul(require_value(arg.c_str()),
                                              nullptr,
                                              10));
@@ -712,6 +773,32 @@ int main(int argc, char** argv)
 
     scan_result r =
         probe(pdsch_ue, earfcn, gain, attempts, subframes);
+
+    /*
+     * In seed mode a confirmed LTE carrier may need another receive
+     * window to obtain SIB1 or SIB5. Do not retry no_cell carriers:
+     * that would make recursive discovery unnecessarily expensive.
+     */
+    if (seed_mode && r.have_mib) {
+      for (uint32_t retry = 0;
+           retry < retries && (!r.have_sib1 || !r.have_sib5);
+           ++retry) {
+        const char* target =
+            !r.have_sib1 ? "SIB1" : "SIB5";
+
+        std::fprintf(stderr,
+                     "Retrying EARFCN %u for %s (%u/%u)...\n",
+                     earfcn,
+                     target,
+                     retry + 1,
+                     retries);
+
+        scan_result retry_result =
+            probe(pdsch_ue, earfcn, gain, attempts, subframes);
+
+        merge_probe_result(&r, retry_result);
+      }
+    }
 
     results.push_back(r);
 
@@ -871,6 +958,7 @@ int main(int argc, char** argv)
                         gain,
                         attempts,
                         subframes,
+                        retries,
                         results) != 0) {
       std::fprintf(stderr,
                    "Could not write scan JSON: %s\n",
