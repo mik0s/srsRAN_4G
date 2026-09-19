@@ -1,3 +1,4 @@
+#include "lte_probe_result.h"
 /**
  * Copyright 2013-2023 Software Radio Systems Limited
  *
@@ -19,6 +20,7 @@
  *
  */
 
+#include "pdsch_ue_sib.h"
 #include <assert.h>
 #include <math.h>
 #include <pthread.h>
@@ -99,6 +101,8 @@ typedef struct {
   uint32_t rf_nof_rx_ant;
   double   rf_freq;
   float    rf_gain;
+  uint32_t max_search_attempts;
+  char*    probe_json_file;
   int      net_port;
   char*    net_address;
   int      net_port_signal;
@@ -134,6 +138,8 @@ void args_default(prog_args_t* args)
   args->rf_dev                             = "";
   args->rf_args                            = "";
   args->rf_freq                            = -1.0;
+  args->max_search_attempts                = 0;
+  args->probe_json_file                    = NULL;
   args->rf_nof_rx_ant                      = 1;
   args->enable_cfo_ref                     = false;
   args->estimator_alg                      = "interpolate";
@@ -191,6 +197,9 @@ void usage(prog_args_t* args, char* prog)
 #endif /* ENABLE_GUI */
   printf("\t-y set the cpu affinity mask [Default %d] \n  ", args->cpu_affinity);
   printf("\t-n nof_subframes [Default %d]\n", args->nof_subframes);
+printf("\t-X maximum cell-search attempts, 0 = unlimited [Default %u]\n",
+       args->max_search_attempts);
+  printf("\t-J probe_json_file [Optional machine-readable probe result]\n");
   printf("\t-s remote UDP port to send input signal (-1 does nothing with it) [Default %d]\n", args->net_port_signal);
   printf("\t-S remote UDP address to send input signal [Default %s]\n", args->net_address_signal);
   printf("\t-u remote TCP port to send data (-1 does nothing with it) [Default %d]\n", args->net_port);
@@ -207,37 +216,37 @@ void parse_args(prog_args_t* args, int argc, char** argv)
   int opt;
   args_default(args);
 
-  while ((opt = getopt(argc, argv, "adAogliIpPcOCtdDFRqnvrfuUsSZyWMNBTGQ")) != -1) {
+  while ((opt = getopt(argc, argv, "a:dA:g:i:I:o:O:p:P:c:CFDR:t:f:T:G:n:X:J:r:l:u:U:s:S:vZ:y:W:M:N:B:qQ")) != -1) {
     switch (opt) {
       case 'i':
-        args->input_file_name = argv[optind];
+        args->input_file_name = optarg;
         break;
       case 'p':
-        args->file_nof_prb = (uint32_t)strtol(argv[optind], NULL, 10);
+        args->file_nof_prb = (uint32_t)strtol(optarg, NULL, 10);
         break;
       case 'P':
-        args->file_nof_ports = (uint32_t)strtol(argv[optind], NULL, 10);
+        args->file_nof_ports = (uint32_t)strtol(optarg, NULL, 10);
         break;
       case 'o':
-        args->file_offset_freq = strtof(argv[optind], NULL);
+        args->file_offset_freq = strtof(optarg, NULL);
         break;
       case 'O':
-        args->file_offset_time = (int)strtol(argv[optind], NULL, 10);
+        args->file_offset_time = (int)strtol(optarg, NULL, 10);
         break;
       case 'c':
-        args->file_cell_id = (uint32_t)strtol(argv[optind], NULL, 10);
+        args->file_cell_id = (uint32_t)strtol(optarg, NULL, 10);
         break;
       case 'I':
-        args->rf_dev = argv[optind];
+        args->rf_dev = optarg;
         break;
       case 'a':
-        args->rf_args = argv[optind];
+        args->rf_args = optarg;
         break;
       case 'A':
-        args->rf_nof_rx_ant = (uint32_t)strtol(argv[optind], NULL, 10);
+        args->rf_nof_rx_ant = (uint32_t)strtol(optarg, NULL, 10);
         break;
       case 'g':
-        args->rf_gain = strtof(argv[optind], NULL);
+        args->rf_gain = strtof(optarg, NULL);
         break;
       case 'C':
         args->disable_cfo = true;
@@ -246,40 +255,46 @@ void parse_args(prog_args_t* args, int argc, char** argv)
         args->enable_cfo_ref = true;
         break;
       case 'R':
-        args->estimator_alg = argv[optind];
+        args->estimator_alg = optarg;
         break;
       case 't':
-        args->time_offset = (uint32_t)strtol(argv[optind], NULL, 10);
+        args->time_offset = (uint32_t)strtol(optarg, NULL, 10);
         break;
       case 'f':
-        args->rf_freq = strtod(argv[optind], NULL);
+        args->rf_freq = strtod(optarg, NULL);
         break;
       case 'T':
-        args->tdd_special_sf = (int)strtol(argv[optind], NULL, 10);
+        args->tdd_special_sf = (int)strtol(optarg, NULL, 10);
         break;
       case 'G':
-        args->sf_config = (int)strtol(argv[optind], NULL, 10);
+        args->sf_config = (int)strtol(optarg, NULL, 10);
         break;
       case 'n':
-        args->nof_subframes = (int)strtol(argv[optind], NULL, 10);
+        args->nof_subframes = (int)strtol(optarg, NULL, 10);
+        break;
+      case 'X':
+        args->max_search_attempts = (uint32_t)strtoul(optarg, NULL, 10);
+        break;
+      case 'J':
+        args->probe_json_file = optarg;
         break;
       case 'r':
-        args->rnti = strtol(argv[optind], NULL, 16);
+        args->rnti = strtol(optarg, NULL, 16);
         break;
       case 'l':
-        args->force_N_id_2 = (int)strtol(argv[optind], NULL, 10);
+        args->force_N_id_2 = (int)strtol(optarg, NULL, 10);
         break;
       case 'u':
-        args->net_port = (int)strtol(argv[optind], NULL, 10);
+        args->net_port = (int)strtol(optarg, NULL, 10);
         break;
       case 'U':
-        args->net_address = argv[optind];
+        args->net_address = optarg;
         break;
       case 's':
-        args->net_port_signal = (int)strtol(argv[optind], NULL, 10);
+        args->net_port_signal = (int)strtol(optarg, NULL, 10);
         break;
       case 'S':
-        args->net_address_signal = argv[optind];
+        args->net_address_signal = optarg;
         break;
       case 'd':
         args->disable_plots = true;
@@ -292,22 +307,22 @@ void parse_args(prog_args_t* args, int argc, char** argv)
         args->verbose = get_srsran_verbose_level();
         break;
       case 'Z':
-        args->decimate = (int)strtol(argv[optind], NULL, 10);
+        args->decimate = (int)strtol(optarg, NULL, 10);
         break;
       case 'y':
-        args->cpu_affinity = (int)strtol(argv[optind], NULL, 10);
+        args->cpu_affinity = (int)strtol(optarg, NULL, 10);
         break;
       case 'W':
-        output_file_name = argv[optind];
+        output_file_name = optarg;
         break;
       case 'M':
-        args->mbsfn_area_id = (int32_t)strtol(argv[optind], NULL, 10);
+        args->mbsfn_area_id = (int32_t)strtol(optarg, NULL, 10);
         break;
       case 'N':
-        args->non_mbsfn_region = (uint8_t)strtol(argv[optind], NULL, 10);
+        args->non_mbsfn_region = (uint8_t)strtol(optarg, NULL, 10);
         break;
       case 'B':
-        args->mbsfn_sf_mask = (uint8_t)strtol(argv[optind], NULL, 10);
+        args->mbsfn_sf_mask = (uint8_t)strtol(optarg, NULL, 10);
         break;
       case 'q':
         args->enable_256qam ^= true;
@@ -393,6 +408,8 @@ srsran_netsink_t net_sink, net_sink_signal;
 
 int main(int argc, char** argv)
 {
+  lte_probe_result_reset();
+
   int ret;
 
 #ifndef DISABLE_RF
@@ -424,8 +441,10 @@ int main(int argc, char** argv)
   if (prog_args.mbsfn_area_id > -1) {
     generate_mcch_table(mch_table, prog_args.mbsfn_sf_mask);
   }
+#ifdef __linux__
   if (prog_args.cpu_affinity > -1) {
     cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
     pthread_t thread;
 
     thread = pthread_self();
@@ -440,6 +459,7 @@ int main(int argc, char** argv)
       }
     }
   }
+#endif // __linux__
 
   if (prog_args.net_port > 0) {
     if (srsran_netsink_init(&net_sink, prog_args.net_address, prog_args.net_port, SRSRAN_NETSINK_UDP)) {
@@ -489,22 +509,68 @@ int main(int argc, char** argv)
     printf("Tuning receiver to %.3f MHz\n", (prog_args.rf_freq + prog_args.file_offset_freq) / 1000000);
     srsran_rf_set_rx_freq(&rf, prog_args.rf_nof_rx_ant, prog_args.rf_freq + prog_args.file_offset_freq);
 
+    /*
+     * Frequency is known even when cell search fails.
+     * Other PHY fields are populated after successful decoding.
+     */
+    lte_probe_set_phy(prog_args.rf_freq + prog_args.file_offset_freq,
+                      0,
+                      0,
+                      0.0f,
+                      0.0f,
+                      0);
+
     uint32_t ntrial = 0;
     do {
       ret = rf_search_and_decode_mib(
           &rf, prog_args.rf_nof_rx_ant, &cell_detect_config, prog_args.force_N_id_2, &cell, &search_cell_cfo);
+
+      ntrial++;
+
       if (ret < 0) {
         ERROR("Error searching for cell");
         exit(-1);
-      } else if (ret == 0 && !go_exit) {
-        printf("Cell not found after [%4d] attempts. Trying again... (Ctrl+C to exit)\n", ntrial++);
+      }
+
+      if (ret == 0 && !go_exit) {
+        printf("Cell not found after [%4u] attempts.\n", ntrial);
+
+        if (prog_args.max_search_attempts > 0 &&
+            ntrial >= prog_args.max_search_attempts) {
+          printf("Cell search limit reached. No LTE cell found.\n");
+          break;
+        }
+
+        printf("Trying again... (Ctrl+C to exit)\n");
       }
     } while (ret == 0 && !go_exit);
+
+    if (ret == 0 && !go_exit) {
+      /*
+       * Normal scanner result: bounded search completed without
+       * finding an LTE cell.
+       */
+      if (prog_args.probe_json_file) {
+        if (lte_probe_result_write_json(prog_args.probe_json_file,
+                                        LTE_PROBE_NO_CELL) != 0) {
+          ERROR("Could not write probe JSON file");
+        }
+      }
+
+      srsran_rf_close(&rf);
+      return 2;
+    }
 
     if (go_exit) {
       srsran_rf_close(&rf);
       exit(0);
     }
+
+    /*
+     * rf_search_and_decode_mib() returned success, therefore PBCH/MIB
+     * has been decoded successfully.
+     */
+    lte_probe_set_mib();
 
     /* set sampling frequency */
     int srate = srsran_sampling_freq_hz(cell.nof_prb);
@@ -762,8 +828,14 @@ int main(int argc, char** argv)
               decode_pdsch = false;
             }
           } else {
-            /* We are looking for SIB1 Blocks, search only in appropiate places */
-            if ((sf_idx == 5 && (sfn % 2) == 0) || mch_table[sf_idx] == 1) {
+            /*
+             * SIB1 has fixed LTE scheduling. Other SystemInformation
+             * messages are searched only inside SI windows advertised
+             * by the most recently decoded SIB1.
+             */
+            if ((sf_idx == 5 && (sfn % 2) == 0) ||
+                pdsch_ue_si_window(sfn, sf_idx) ||
+                mch_table[sf_idx] == 1) {
               decode_pdsch = true;
             } else {
               decode_pdsch = false;
@@ -802,6 +874,15 @@ int main(int argc, char** argv)
                   last_decoded_tm = tm;
                   for (uint32_t tb = 0; tb < SRSRAN_MAX_CODEWORDS; tb++) {
                     if (pdsch_cfg.grant.tb[tb].enabled) {
+
+                      /* Decode successfully received BCCH-DL-SCH messages
+                       * carried using SI-RNTI.
+                       */
+                      if (acks[tb] && prog_args.rnti == SRSRAN_SIRNTI) {
+                        uint32_t nbytes = (pdsch_cfg.grant.tb[tb].tbs + 7) / 8;
+                        pdsch_ue_decode_bcch(data[tb], nbytes);
+                      }
+
                       if (!acks[tb]) {
                         if (sf_type == SRSRAN_SF_NORM) {
                           pkt_errors++;
@@ -986,6 +1067,29 @@ int main(int argc, char** argv)
 
     sf_cnt++;
   } // Main loop
+
+/*
+ * Export final PHY measurements.
+ *
+ * rsrp0 is useful for relative comparison with a fixed HackRF/gain
+ * configuration, but is not considered calibrated absolute dBm.
+ */
+lte_probe_set_phy(prog_args.rf_freq + prog_args.file_offset_freq,
+                  (uint16_t)cell.id,
+                  (uint16_t)cell.nof_prb,
+                  snr,
+                  rsrp0,
+                  0);
+
+/* Emit the accumulated machine-readable LTE cell result once. */
+lte_probe_result_dump();
+
+  if (prog_args.probe_json_file) {
+    if (lte_probe_result_write_json(prog_args.probe_json_file,
+                                    LTE_PROBE_OK) != 0) {
+      ERROR("Could not write probe JSON file");
+    }
+  }
 
 #ifdef ENABLE_GUI
   if (!prog_args.disable_plots) {

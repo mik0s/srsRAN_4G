@@ -30,7 +30,8 @@ target_link_libraries(synch_file srsran_phy)
 #################################################################
 
 if(RF_FOUND)
-  add_executable(pdsch_ue pdsch_ue.c)
+  add_executable(pdsch_ue pdsch_ue.c pdsch_ue_sib.cc lte_probe_result.cc lte_earfcn.cc)
+target_link_libraries(pdsch_ue rrc_asn1)
   target_link_libraries(pdsch_ue srsran_phy srsran_common srsran_rf pthread)
 
   add_executable(pdsch_enodeb pdsch_enodeb.c)
@@ -108,3 +109,10 @@ endif(RF_FOUND)
 
 # Add eNB/UE IQ test
 add_subdirectory(test)
+
+# LTE carrier scanner.
+# The first implementation uses pdsch_ue as an isolated probe backend.
+add_executable(lte_scan
+  lte_scan.cc
+  lte_earfcn.cc
+)
