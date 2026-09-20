@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - ltesurvey
-      - 'ci/**'
-      - 'feature/**'
   pull_request:
     branches:
       - ltesurvey
