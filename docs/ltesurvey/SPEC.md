@@ -1874,6 +1874,106 @@ Backend должен выдавать список MIB-confirmed LTE candidates.
 - full macOS srsRAN port;
 - RF backend cleanup.
 
+## Offline IQ regression fixture
+
+Phase 1 должен включать software-only regression test на реальной записи LTE downlink. Цель fixture — воспроизводимо проверить тракт discovery без наличия HackRF в CI:
+
+```text
+recorded LTE IQ
+ -> file RF backend
+ -> PSS/SSS
+ -> candidate
+ -> PBCH/MIB
+ -> structured discovery JSON
+```
+
+Проверенная fixture подготовлена из реального HackRF capture контрольной B3 cell. Исходная запись была получена на:
+
+```text
+center frequency: 1844600000 Hz
+sample rate:      15360000 sample/s
+HackRF AMP:       off
+LNA gain:         32
+VGA gain:         32
+```
+
+Исходный high-rate capture не требуется хранить в repository. Для regression используется предварительно отфильтрованный и decimated сигнал.
+
+Формат repository fixture:
+
+```text
+sample format:       signed int8
+IQ layout:           interleaved I,Q
+sample rate:         1920000 sample/s
+duration:            4.5 s
+size:                17280000 bytes
+center frequency:    1844600000 Hz
+LTE band:            3
+EARFCN:              1596
+normalization:       peak component approximately 100
+```
+
+Нормализация является только способом эффективного использования динамического диапазона fixture. Она не сохраняет абсолютную RF amplitude и не должна использоваться для получения dBm, RSRP, RSSI или других calibrated measurements.
+
+Перед подачей в текущий `rf_file` backend fixture преобразуется:
+
+```text
+CS8 @ 1.92 Msps
+ -> deterministic CS8-to-FC32 conversion
+ -> FC32 @ 1.92 Msps
+ -> rf_file with base_srate=1920000
+```
+
+Для этого преобразования не требуется resampling, filtering, SciPy или иной DSP. Оно должно быть простым детерминированным sample-format conversion. Временный FC32 файл не хранится в repository.
+
+Ожидаемый единственный MIB-confirmed результат fixture:
+
+```json
+{
+  "cells": [
+    {
+      "earfcn": 1596,
+      "band": 3,
+      "frequency_hz": 1844600000,
+      "pci": 346,
+      "nof_prb": 50,
+      "bandwidth_mhz": 10.0,
+      "nof_ports": 2
+    }
+  ]
+}
+```
+
+Regression test должен проверять точный набор MIB-confirmed cells. Тест должен завершаться ошибкой как при отсутствии ожидаемой cell, так и при появлении дополнительной MIB-confirmed cell.
+
+PSR, peak, CFO и некалиброванные power-like значения не являются стабильными acceptance constants для этой fixture.
+
+Текущий `cell_search` использует half-open EARFCN range. Для проверки одного EARFCN 1596 используется:
+
+```text
+-s 1596 -e 1597
+```
+
+Один статический `rx_file` не моделирует физический retune между разными EARFCN. Поэтому эта fixture предназначена для single-frequency discovery regression и не заменяет hardware retune test.
+
+При file backend PSS search и последующий MIB decoder последовательно потребляют один и тот же конечный IQ stream. Экспериментально 1, 2 и 3 секунды этой записи заканчивались EOF до успешного MIB decode, а 4 и 5 секунд проходили. Для fixture выбрана длительность 4.5 секунды как проверенный запас относительно границы.
+
+Рекомендуемая структура:
+
+```text
+tests/fixtures/lte/b3-earfcn1596/
+    README.md
+    metadata.json
+    capture.cs8
+
+tests/tools/
+    cs8_to_fc32.py
+```
+
+`metadata.json` должен описывать формат, sample rate, duration, center frequency, band, EARFCN, normalization, ожидаемые cells и SHA-256 IQ fixture.
+
+Regression test должен использовать structured discovery JSON как authoritative result, а не разбирать human-readable stdout.
+
 ## Acceptance
 
 Software build:
@@ -1886,6 +1986,22 @@ lte_scan
 
 должен оставаться успешным.
 
+Software-only offline regression должна подтвердить:
+
+```text
+CS8 fixture
+ -> FC32
+ -> file RF backend
+ -> PSS/SSS
+ -> PCI 346
+ -> MIB
+ -> 50 PRB / 10 MHz
+ -> 2 antenna ports
+ -> structured candidate
+```
+
+и отсутствие дополнительных MIB-confirmed cells.
+
 Hardware verification должна подтвердить:
 
 ```text
@@ -1896,6 +2012,8 @@ band/range scan
 ```
 
 и отсутствие stale results при retune.
+
+Offline IQ fixture не заменяет hardware verification retune/sample-rate/SoapySDR semantics.
 
 ---
 
