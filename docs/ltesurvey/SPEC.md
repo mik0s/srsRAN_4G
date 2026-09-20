@@ -520,6 +520,141 @@ Arinst spectrum fixture
 Точное ranking threshold и confidence model следует зафиксировать после реализации baseline detector и проверки на обоих sweep, не подгоняя алгоритм под один файл.
 
 
+### Field cross-calibration HackRF по Arinst
+
+Arinst SSA R3 без tracking generator может использоваться как field reference для привязки относительных HackRF measurements к приблизительной шкале dBm по сохранённому `LOG_N`.
+
+Это не является лабораторной или метрологической калибровкой. Цель — получить reproducible local correction для конкретного HackRF, его gain settings, antenna/cable path, частотного диапазона и условий съёмки.
+
+Целевая схема:
+
+```text
+Arinst LOG_N spectrum
+        +
+HackRF IQ / spectrum measurement
+        ↓
+compare equivalent frequency windows
+        ↓
+derive local correction profile
+        ↓
+estimated HackRF power in dBm
+```
+
+Критическое требование: сравнивать необходимо одну и ту же физическую величину в эквивалентной полосе.
+
+Нельзя напрямую вычитать:
+
+```text
+Arinst peak bin @ RBW 25 kHz
+minus
+HackRF total IQ power over 10 MHz
+```
+
+Такие значения имеют разную bandwidth semantics и не образуют корректный calibration offset.
+
+Предпочтительный подход:
+
+- привести Arinst trace и HackRF measurement к общей frequency grid или общим channel windows;
+- использовать одинаковые frequency boundaries;
+- сравнивать PSD-like или integrated/channel-power-like величины с явно определённой bandwidth semantics;
+- фиксировать HackRF `LNA`, `VGA`, `AMP`, sample rate и другие gain-affecting settings;
+- фиксировать Arinst mode, RBW, RF input setting и диапазон;
+- снимать reference и HackRF measurement максимально близко по времени;
+- по возможности использовать ту же антенну, кабель и положение;
+- если RF path различается, считать полученную correction profile привязанной к конкретной полевой конфигурации, а не только к самому HackRF.
+
+Минимальная модель correction:
+
+```text
+offset(f, gain_profile) =
+    reference_power_dbm(f, bandwidth)
+  - hackrf_relative_power_dbfs(f, bandwidth)
+```
+
+После этого:
+
+```text
+estimated_power_dbm =
+    hackrf_relative_power_dbfs + interpolated_offset
+```
+
+Один глобальный offset на весь диапазон использовать нельзя без отдельного подтверждения. Correction profile должен как минимум учитывать frequency dependence и HackRF gain profile.
+
+Возможная структура profile:
+
+```json
+{
+  "reference_source": "arinst_ssa_r3",
+  "reference_mode": "field_cross_calibration",
+  "hackrf": {
+    "lna_gain_db": 32,
+    "vga_gain_db": 20,
+    "amp": false,
+    "sample_rate_hz": 15360000
+  },
+  "reference": {
+    "mode": "Precision",
+    "rbw_hz": 25000,
+    "rf_input_db": 15
+  },
+  "points": [
+    {
+      "frequency_hz": 1844600000,
+      "bandwidth_hz": 10000000,
+      "offset_db": -38.0
+    }
+  ]
+}
+```
+
+Точная schema является implementation detail следующего этапа и может быть уточнена после первого реального paired measurement.
+
+Machine-readable output должен явно отличать:
+
+```text
+rf_metric_calibrated: false
+```
+
+от приблизительной field-referenced оценки. Не следует устанавливать `calibrated=true` только потому, что применён Arinst-derived offset.
+
+Предпочтительные поля:
+
+```text
+estimated_power_dbm
+power_reference = "arinst_ssa_r3"
+power_reference_mode = "field_cross_calibration"
+power_reference_profile = ...
+```
+
+Также следует хранить uncertainty/quality metadata, когда появится обоснованная модель ошибки.
+
+Важно: даже после такой cross-calibration `estimated_power_dbm` не является автоматически LTE RSRP.
+
+Для RSRP требуется отдельный LTE-aware measurement path по reference signal resource elements:
+
+```text
+calibrated/field-referenced IQ amplitude
+        +
+LTE CRS extraction
+        ↓
+estimated RSRP
+```
+
+Поэтому нельзя переименовывать broadband/channel power в `rsrp_dbm`, `rsrq_db`, `rssi_dbm` или `sinr_db` без корректной LTE PHY semantics.
+
+Первый practical experiment для B3 рекомендуется строить на paired captures вокруг известной carrier:
+
+```text
+B3
+EARFCN 1596
+1844.6 MHz
+10 MHz
+```
+
+Arinst `LOG_N` и HackRF measurement должны быть сняты максимально близко по времени при документированных gain/RF settings. Этот эксперимент предназначен для проверки feasibility и repeatability field cross-calibration, а не для установления метрологической точности прибора.
+
+
+
 Главное архитектурное требование:
 
 **не запускать полный PDSCH/SIB probe на каждой точке LTE 100 kHz raster.**
