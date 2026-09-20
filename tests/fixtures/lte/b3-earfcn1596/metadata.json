@@ -1,0 +1,31 @@
+{
+  "description": "LTE Band 3 offline discovery regression fixture captured with HackRF One",
+  "format": "cs8",
+  "iq_order": "IQ",
+  "sample_rate_hz": 1920000,
+  "duration_seconds": 4.5,
+  "sample_count": 8640000,
+  "size_bytes": 17280000,
+  "center_frequency_hz": 1844600000,
+  "band": 3,
+  "earfcn": 1596,
+  "normalization": {
+    "method": "peak_component",
+    "target": 100,
+    "note": "Storage normalization only; absolute RF amplitude is not preserved."
+  },
+  "sha256": "09c719f5208ca8060d3c1b2c300cb88bfe26e2df519d5120fff5de20410d335e",
+  "expected": {
+    "cells": [
+      {
+        "earfcn": 1596,
+        "band": 3,
+        "frequency_hz": 1844600000,
+        "pci": 346,
+        "nof_prb": 50,
+        "bandwidth_mhz": 10.0,
+        "nof_ports": 2
+      }
+    ]
+  }
+}
