@@ -1,5 +1,11 @@
 name: C/C++ CI
-on: push
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
 jobs:
   x86_ubuntu_build:
     name: Build on x86
