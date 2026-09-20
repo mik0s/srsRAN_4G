@@ -26,7 +26,10 @@ jobs:
       - name: Install build dependencies
         run: |
           brew update
-          brew install cmake fftw mbedtls boost libconfig soapysdr hackrf soapyhackrf
+          brew install cmake fftw mbedtls@3 boost libconfig soapysdr hackrf soapyhackrf
+          echo "PKG_CONFIG_PATH=$(brew --prefix mbedtls@3)/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+          echo "CPPFLAGS=-I$(brew --prefix mbedtls@3)/include" >> "$GITHUB_ENV"
+          echo "LDFLAGS=-L$(brew --prefix mbedtls@3)/lib" >> "$GITHUB_ENV"
 
       - name: Configure ltesurvey targets
         run: |
