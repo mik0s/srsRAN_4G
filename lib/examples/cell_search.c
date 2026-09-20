@@ -82,28 +82,28 @@ void usage(char* prog)
 void parse_args(int argc, char** argv)
 {
   int opt;
-  while ((opt = getopt(argc, argv, "agsendvb")) != -1) {
+  while ((opt = getopt(argc, argv, "a:b:d:s:e:n:g:v")) != -1) {
     switch (opt) {
       case 'a':
-        rf_args = argv[optind];
+        rf_args = optarg;
         break;
       case 'b':
-        band = (int)strtol(argv[optind], NULL, 10);
+        band = (int)strtol(optarg, NULL, 10);
         break;
       case 'd':
-        rf_dev = argv[optind];
+        rf_dev = optarg;
         break;
       case 's':
-        earfcn_start = (int)strtol(argv[optind], NULL, 10);
+        earfcn_start = (int)strtol(optarg, NULL, 10);
         break;
       case 'e':
-        earfcn_end = (int)strtol(argv[optind], NULL, 10);
+        earfcn_end = (int)strtol(optarg, NULL, 10);
         break;
       case 'n':
-        cell_detect_config.max_frames_pss = (uint32_t)strtol(argv[optind], NULL, 10);
+        cell_detect_config.max_frames_pss = (uint32_t)strtol(optarg, NULL, 10);
         break;
       case 'g':
-        rf_gain = strtof(argv[optind], NULL);
+        rf_gain = strtof(optarg, NULL);
         break;
       case 'v':
         increase_srsran_verbose_level();
@@ -205,6 +205,15 @@ int main(int argc, char** argv)
   }
 
   for (freq = 0; freq < nof_freqs && !go_exit; freq++) {
+    /*
+     * Stop the previous RX stream before retuning.
+     *
+     * This is important for SoapySDR/HackRF: retuning an active stream may
+     * leave buffered samples from the previous frequency visible to the
+     * following cell search.
+     */
+    srsran_rf_stop_rx_stream(&rf);
+
     /* set rf_freq */
     srsran_rf_set_rx_freq(&rf, 0, (double)channels[freq].fd * MHZ);
     INFO("Set rf_freq to %.3f MHz", (double)channels[freq].fd * MHZ / 1000000);
@@ -225,6 +234,22 @@ int main(int argc, char** argv)
     srsran_rf_start_rx_stream(&rf, false);
 
     n = srsran_ue_cellsearch_scan(&cs, found_cells, NULL);
+
+    /*
+     * Cell search and MIB decoding own separate RX sessions.
+     * Stop the PSS-search stream before rf_mib_decoder() starts its own.
+     */
+    srsran_rf_stop_rx_stream(&rf);
+
+    printf("CELLSEARCH EARFCN=%d ret=%d\\n", channels[freq].id, n);
+    for (int i = 0; i < 3; i++) {
+      printf("  N_id_2=%d PCI=%d PSR=%.3f peak=%.6f CFO=%.1fHz\\n",
+             i,
+             found_cells[i].cell_id,
+             found_cells[i].psr,
+             found_cells[i].peak,
+             found_cells[i].cfo);
+    }
     if (n < 0) {
       ERROR("Error searching cell");
       exit(-1);

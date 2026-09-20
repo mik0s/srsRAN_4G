@@ -40,6 +40,25 @@ static const lte_band_info* find_band(uint8_t band)
   return nullptr;
 }
 
+extern "C" int lte_band_earfcn_range(uint8_t band,
+                                      uint32_t* first_earfcn,
+                                      uint32_t* last_earfcn)
+{
+  if (!first_earfcn || !last_earfcn) {
+    return -1;
+  }
+
+  const lte_band_info* b = find_band(band);
+  if (!b) {
+    return -1;
+  }
+
+  *first_earfcn = b->earfcn_first;
+  *last_earfcn = b->earfcn_last;
+
+  return 0;
+}
+
 extern "C" int lte_frequency_to_earfcn(double frequency_hz,
                                         uint8_t band,
                                         uint32_t* earfcn)
