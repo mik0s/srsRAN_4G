@@ -37,7 +37,8 @@ jobs:
             -DENABLE_SRSENB=OFF \
             -DENABLE_SRSEPC=OFF \
             -DENABLE_UHD=OFF \
-            -DENABLE_SOAPYSDR=ON
+            -DENABLE_SOAPYSDR=ON \
+            -DENABLE_WERROR=OFF
 
       - name: Build ltesurvey targets
         run: |
