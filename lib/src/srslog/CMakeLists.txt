@@ -24,8 +24,8 @@ set(SOURCES
     srslog_c.cpp
     event_trace.cpp)
 
-include_directories(${PROJECT_SOURCE_DIR}/lib/include/srsran/srslog/bundled/)
-include_directories(${PROJECT_SOURCE_DIR}/lib/include/srsran/srslog/formatters)
+include_directories(BEFORE ${PROJECT_SOURCE_DIR}/lib/include/srsran/srslog/bundled/)
+include_directories(BEFORE ${PROJECT_SOURCE_DIR}/lib/include/srsran/srslog/formatters)
 
 set(SOURCES
     ${SOURCES}

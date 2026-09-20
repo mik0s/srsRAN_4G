@@ -84,7 +84,7 @@ int srsran_netsink_set_nonblocking(srsran_netsink_t* q)
 int srsran_netsink_write(srsran_netsink_t* q, void* buffer, int nof_bytes)
 {
   if (!q->connected) {
-    if (connect(q->sockfd, &q->servaddr, sizeof(q->servaddr)) < 0) {
+    if (connect(q->sockfd, (const struct sockaddr*)&q->servaddr, sizeof(q->servaddr)) < 0) {
       if (errno == ECONNREFUSED || errno == EINPROGRESS) {
         return SRSRAN_SUCCESS;
       } else {

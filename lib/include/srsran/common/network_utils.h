@@ -30,7 +30,9 @@
 #include <map>
 #include <mutex>
 #include <netinet/in.h>
+#ifdef __linux__
 #include <netinet/sctp.h>
+#endif
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <sys/socket.h>
@@ -88,9 +90,11 @@ public:
   bool connect_to(const char* dest_addr_str, int dest_port, sockaddr_in* dest_sockaddr = nullptr);
   bool start_listen();
   bool reuse_addr();
+#ifdef __linux__
   bool sctp_subscribe_to_events();
   bool sctp_set_rto_opts(int rto_max);
   bool sctp_set_init_msg_opts(int max_init_attempts, int max_init_timeo);
+#endif
   int  get_socket() const { return sockfd; };
 
 protected:
@@ -100,7 +104,9 @@ protected:
 
 namespace net_utils {
 
+#ifdef __linux__
 bool sctp_init_socket(unique_socket* socket, net_utils::socket_type socktype, const char* bind_addr_str, int bind_port);
+#endif
 
 } // namespace net_utils
 
@@ -173,9 +179,11 @@ private:
   std::condition_variable        rem_cvar;
 };
 
+#ifdef __linux__
 /// Function signature for SDU byte buffers received from SCTP socket
 using sctp_recv_callback_t =
     srsran::move_callback<void(srsran::unique_byte_buffer_t, const sockaddr_in&, const sctp_sndrcvinfo&, int)>;
+#endif
 
 /// Function signature for SDU byte buffers received from any sockaddr_in-based socket
 using recvfrom_callback_t = srsran::move_callback<void(srsran::unique_byte_buffer_t, const sockaddr_in&)>;
@@ -191,8 +199,10 @@ using recvfrom_callback_t = srsran::move_callback<void(srsran::unique_byte_buffe
  * @param rx_callback callback that is run when a new SDU arrives, from the thread that calls queue.pop()
  * @return callback void(int) that can be registered in socket_manager
  */
+#ifdef __linux__
 socket_manager_itf::recv_callback_t
 make_sctp_sdu_handler(srslog::basic_logger& logger, srsran::task_queue_handle& queue, sctp_recv_callback_t rx_callback);
+#endif
 
 /**
  * Similar to make_sctp_sdu_handler, but for any sockaddr_in-based socket type

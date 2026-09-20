@@ -21,7 +21,9 @@
 
 #include "srsran/common/network_utils.h"
 
+#ifdef __linux__
 #include <netinet/sctp.h>
+#endif
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h> // for the pipe
@@ -220,6 +222,7 @@ bool reuse_addr(int fd)
   return true;
 }
 
+#ifdef __linux__
 bool sctp_subscribe_to_events(int fd)
 {
   if (fd < 0) {
@@ -305,6 +308,7 @@ bool sctp_set_init_msg_opts(int fd, int init_max_attempts, int max_init_timeo)
   }
   return true;
 }
+#endif // __linux__
 } // namespace net_utils
 
 /********************************************
@@ -376,6 +380,7 @@ bool unique_socket::reuse_addr()
   return net_utils::reuse_addr(sockfd);
 }
 
+#ifdef __linux__
 bool unique_socket::sctp_subscribe_to_events()
 {
   return net_utils::sctp_subscribe_to_events(sockfd);
@@ -390,6 +395,7 @@ bool unique_socket::sctp_set_init_msg_opts(int max_init_attempts, int max_init_t
 {
   return net_utils::sctp_set_init_msg_opts(sockfd, max_init_attempts, max_init_timeo);
 }
+#endif // __linux__
 
 /***************************************************************
  *                 Rx Multisocket Handler
@@ -594,6 +600,7 @@ void socket_manager::run_thread()
  *                 Rx Multisocket Task Types
  **************************************************************/
 
+#ifdef __linux__
 class sctp_recvmsg_pdu_task
 {
 public:
@@ -647,6 +654,7 @@ make_sctp_sdu_handler(srslog::basic_logger& logger, srsran::task_queue_handle& q
 {
   return socket_manager_itf::recv_callback_t(sctp_recvmsg_pdu_task(logger, queue, std::move(rx_callback)));
 }
+#endif // __linux__
 
 /**
  * Description: Functor for the case the received data is

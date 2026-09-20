@@ -25,7 +25,9 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
+#ifdef __linux__
 #include <sys/timerfd.h>
+#endif
 #include <unistd.h>
 
 // Default priority for all threads below UHD threads
@@ -48,6 +50,16 @@ void threads_print_self();
 #include <string>
 
 namespace srsran {
+
+inline void set_thread_name(pthread_t thread, const char* name)
+{
+#ifdef __APPLE__
+  (void)thread;
+  pthread_setname_np(name);
+#else
+  pthread_setname_np(thread, name);
+#endif
+}
 
 class thread
 {
@@ -84,7 +96,7 @@ public:
   void set_name(const std::string& name_)
   {
     name = name_;
-    pthread_setname_np(pthread_self(), name.c_str());
+    set_thread_name(pthread_self(), name.c_str());
   }
 
   void wait_thread_finish() { pthread_join(_thread, NULL); }
@@ -108,7 +120,7 @@ protected:
 private:
   static void* thread_function_entry(void* _this)
   {
-    pthread_setname_np(pthread_self(), ((thread*)_this)->name.c_str());
+    set_thread_name(pthread_self(), ((thread*)_this)->name.c_str());
     ((thread*)_this)->run_thread();
     return NULL;
   }
@@ -117,6 +129,7 @@ private:
   std::string name;
 };
 
+#ifdef __linux__
 class periodic_thread : public thread
 {
 public:
@@ -205,6 +218,7 @@ private:
     }
   }
 };
+#endif // __linux__
 
 } // namespace srsran
 

@@ -113,7 +113,7 @@ public:
                                [&formatter](detail::log_entry_metadata&& metadata, fmt::memory_buffer& buffer) {
                                  formatter.format(std::move(metadata), buffer);
                                },
-                               {std::chrono::high_resolution_clock::now(),
+                               {std::chrono::system_clock::now(),
                                 {ctx_value, should_print_context},
                                 fmtstr,
                                 store,
@@ -149,7 +149,7 @@ public:
                                [&formatter](detail::log_entry_metadata&& metadata, fmt::memory_buffer& buffer) {
                                  formatter.format(std::move(metadata), buffer);
                                },
-                               {std::chrono::high_resolution_clock::now(),
+                               {std::chrono::system_clock::now(),
                                 {ctx_value, should_print_context},
                                 fmtstr,
                                 store,
@@ -174,7 +174,7 @@ public:
                                [&formatter, ctx](detail::log_entry_metadata&& metadata, fmt::memory_buffer& buffer) {
                                  formatter.format_ctx(ctx, std::move(metadata), buffer);
                                },
-                               {std::chrono::high_resolution_clock::now(),
+                               {std::chrono::system_clock::now(),
                                 {ctx_value, should_print_context},
                                 nullptr,
                                 nullptr,
@@ -205,7 +205,7 @@ public:
                                [&formatter, ctx](detail::log_entry_metadata&& metadata, fmt::memory_buffer& buffer) {
                                  formatter.format_ctx(ctx, std::move(metadata), buffer);
                                },
-                               {std::chrono::high_resolution_clock::now(),
+                               {std::chrono::system_clock::now(),
                                 {ctx_value, should_print_context},
                                 fmtstr,
                                 store,

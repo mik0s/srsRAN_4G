@@ -40,7 +40,7 @@ struct log_context {
 
 /// Metadata fields carried for each log entry.
 struct log_entry_metadata {
-  std::chrono::high_resolution_clock::time_point      tp;
+  std::chrono::system_clock::time_point      tp;
   log_context                                         context;
   const char*                                         fmtstring;
   fmt::dynamic_format_arg_store<fmt::printf_context>* store;

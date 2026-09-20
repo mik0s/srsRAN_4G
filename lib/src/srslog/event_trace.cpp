@@ -104,7 +104,7 @@ void trace_duration_begin(const std::string& category, const std::string& name)
 
   char fmt_time[24];
   format_time(fmt_time, sizeof(fmt_time));
-  (*tracer)("[%s] [TID:%0u] Entering \"%s\": %s", fmt_time, (unsigned)::pthread_self(), category, name);
+  (*tracer)("[%s] [TID:%p] Entering \"%s\": %s", fmt_time, (void*)::pthread_self(), category, name);
 }
 
 void trace_duration_end(const std::string& category, const std::string& name)
@@ -115,7 +115,7 @@ void trace_duration_end(const std::string& category, const std::string& name)
 
   char fmt_time[24];
   format_time(fmt_time, sizeof(fmt_time));
-  (*tracer)("[%s] [TID:%0u] Leaving \"%s\": %s", fmt_time, (unsigned)::pthread_self(), category, name);
+  (*tracer)("[%s] [TID:%p] Leaving \"%s\": %s", fmt_time, (void*)::pthread_self(), category, name);
 }
 
 } // namespace srslog

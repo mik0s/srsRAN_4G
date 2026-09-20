@@ -19,13 +19,19 @@
  *
  */
 
+#ifdef __APPLE__
+#define SRSRAN_RF_PLUGIN_EXT ".dylib"
+#else
+#define SRSRAN_RF_PLUGIN_EXT ".so"
+#endif
+
 #include "srsran/phy/rf/rf.h"
 #include <stdbool.h>
 
 /* Define implementation for UHD */
 #ifdef ENABLE_UHD
 #ifdef ENABLE_RF_PLUGINS
-static srsran_rf_plugin_t plugin_uhd = {"libsrsran_rf_uhd.so", NULL, NULL};
+static srsran_rf_plugin_t plugin_uhd = {"libsrsran_rf_uhd" SRSRAN_RF_PLUGIN_EXT, NULL, NULL};
 #else
 #include "rf_uhd_imp.h"
 static srsran_rf_plugin_t plugin_uhd   = {"", NULL, &srsran_rf_dev_uhd};
@@ -35,7 +41,7 @@ static srsran_rf_plugin_t plugin_uhd   = {"", NULL, &srsran_rf_dev_uhd};
 /* Define implementation for bladeRF */
 #ifdef ENABLE_BLADERF
 #ifdef ENABLE_RF_PLUGINS
-static srsran_rf_plugin_t plugin_blade = {"libsrsran_rf_blade.so", NULL, NULL};
+static srsran_rf_plugin_t plugin_blade = {"libsrsran_rf_blade" SRSRAN_RF_PLUGIN_EXT, NULL, NULL};
 #else
 #include "rf_blade_imp.h"
 static srsran_rf_plugin_t plugin_blade = {"", NULL, &srsran_rf_dev_blade};
@@ -45,7 +51,7 @@ static srsran_rf_plugin_t plugin_blade = {"", NULL, &srsran_rf_dev_blade};
 /* Define implementation for SoapySDR */
 #ifdef ENABLE_SOAPYSDR
 #ifdef ENABLE_RF_PLUGINS
-static srsran_rf_plugin_t plugin_soapy = {"libsrsran_rf_soapy.so", NULL, NULL};
+static srsran_rf_plugin_t plugin_soapy = {"libsrsran_rf_soapy" SRSRAN_RF_PLUGIN_EXT, NULL, NULL};
 #else
 #include "rf_soapy_imp.h"
 static srsran_rf_plugin_t plugin_soapy = {"", NULL, &srsran_rf_dev_soapy};
@@ -55,7 +61,7 @@ static srsran_rf_plugin_t plugin_soapy = {"", NULL, &srsran_rf_dev_soapy};
 /* Define implementation for ZeroMQ */
 #ifdef ENABLE_ZEROMQ
 #ifdef ENABLE_RF_PLUGINS
-static srsran_rf_plugin_t plugin_zmq = {"libsrsran_rf_zmq.so", NULL, NULL};
+static srsran_rf_plugin_t plugin_zmq = {"libsrsran_rf_zmq" SRSRAN_RF_PLUGIN_EXT, NULL, NULL};
 #else
 #include "rf_zmq_imp.h"
 static srsran_rf_plugin_t plugin_zmq   = {"", NULL, &srsran_rf_dev_zmq};

@@ -49,7 +49,7 @@ static void format_hex_dump(const std::vector<uint8_t>& v, fmt::memory_buffer& b
 static void format_metadata(const detail::log_entry_metadata& metadata, fmt::memory_buffer& buffer)
 {
   // Time stamp data preparation.
-  std::tm current_time = fmt::gmtime(std::chrono::high_resolution_clock::to_time_t(metadata.tp));
+  std::tm current_time = fmt::gmtime(std::chrono::system_clock::to_time_t(metadata.tp));
   auto    us_fraction =
       std::chrono::duration_cast<std::chrono::microseconds>(metadata.tp.time_since_epoch()).count() % 1000000u;
   fmt::format_to(buffer, "{:%F}T{:%H:%M:%S}.{:06} ", current_time, current_time, us_fraction);

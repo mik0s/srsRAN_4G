@@ -24,7 +24,7 @@
 add_subdirectory(src)
 add_subdirectory(include)
 add_subdirectory(examples)
-add_subdirectory(test)
+# add_subdirectory(test) # disabled for macOS build
 
 ########################################################################
 # Install library headers

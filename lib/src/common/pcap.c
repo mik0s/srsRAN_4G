@@ -21,7 +21,16 @@
 
 #include "srsran/common/pcap.h"
 #include <arpa/inet.h>
-#include <linux/udp.h>
+/*
+ * Minimal UDP header used only for synthetic PCAP records.
+ * Keep Linux field names used by the original srsRAN code.
+ */
+struct srsran_udphdr {
+  uint16_t source;
+  uint16_t dest;
+  uint16_t len;
+  uint16_t check;
+};
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
@@ -153,7 +162,7 @@ LTE_PCAP_MAC_UDP_WritePDU(FILE* fd, MAC_Context_Info_t* context, const unsigned 
   pcaprec_hdr_t  packet_header;
   uint8_t        context_header[PCAP_CONTEXT_HEADER_MAX] = {};
   int            offset                                  = 0;
-  struct udphdr* udp_header;
+  struct srsran_udphdr* udp_header;
   // uint16_t       tmp16;
 
   /* Can't write if file wasn't successfully opened */
@@ -162,7 +171,7 @@ LTE_PCAP_MAC_UDP_WritePDU(FILE* fd, MAC_Context_Info_t* context, const unsigned 
     return 0;
   }
   // Add dummy UDP header, start with src and dest port
-  udp_header       = (struct udphdr*)context_header;
+  udp_header       = (struct srsran_udphdr*)context_header;
   udp_header->dest = htons(0xdead);
   offset += 2;
   udp_header->source = htons(0xbeef);
@@ -429,7 +438,7 @@ inline int NR_PCAP_PACK_MAC_CONTEXT_TO_BUFFER(mac_nr_context_info_t* context, ui
 int NR_PCAP_MAC_UDP_WritePDU(FILE* fd, mac_nr_context_info_t* context, const unsigned char* PDU, unsigned int length)
 {
   uint8_t        context_header[PCAP_CONTEXT_HEADER_MAX] = {};
-  struct udphdr* udp_header;
+  struct srsran_udphdr* udp_header;
   int            offset = 0;
 
   /* Can't write if file wasn't successfully opened */
@@ -439,7 +448,7 @@ int NR_PCAP_MAC_UDP_WritePDU(FILE* fd, mac_nr_context_info_t* context, const uns
   }
 
   // Add dummy UDP header, start with src and dest port
-  udp_header       = (struct udphdr*)context_header;
+  udp_header       = (struct srsran_udphdr*)context_header;
   udp_header->dest = htons(0xdead);
   offset += 2;
   udp_header->source = htons(0xbeef);
