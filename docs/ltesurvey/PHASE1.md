@@ -480,8 +480,13 @@ Hardware correctness важнее architectural cleanup.
 
 ## 19. Что не входит в Phase 1
 
+Новые Arinst fixtures уже добавлены как материал для следующего этапа, но текущий Phase 1 не должен расширяться до spectrum pre-discovery.
+
+
 Не реализовывать в рамках этой задачи:
 
+- Arinst SSA R3 CSV/directory importer;
+- spectrum pre-discovery по Arinst fixtures;
 - `lte-scan --band 3`;
 - multi-band scanning;
 - SIB1/SIB5 aggregation;

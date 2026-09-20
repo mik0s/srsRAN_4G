@@ -385,6 +385,141 @@ HackRF power-cycle / USB reconnect
 
 # 10. LTE discovery architecture
 
+
+## 10.0. Spectrum pre-discovery и Arinst SSA R3
+
+Помимо прямого LTE raster scan через SDR, `ltesurvey` должен поддерживать offline spectrum pre-discovery по сохранённым логам спектроанализатора Arinst SSA R3 (PRO).
+
+Arinst в этом сценарии не заменяет SDR и не предоставляет LTE PHY/IQ decode. Его задача — быстро сузить пространство поиска: определить широкополосные области, похожие на LTE carriers, сопоставить их с LTE band/raster hypotheses и сформировать короткий список частот/EARFCN для последующей проверки HackRF.
+
+Целевая цепочка:
+
+```text
+Arinst SSA R3
+  -> saved LOG_N directory
+  -> Spectrum*.csv / Trace*.csv
+  -> ltesurvey spectrum pre-discovery
+  -> ranked LTE band / center / bandwidth / EARFCN hypotheses
+  -> HackRF IQ capture or live probe
+  -> PSS/SSS
+  -> MIB
+  -> confirmed LTE cell
+```
+
+### Формат входа Arinst
+
+Естественной единицей импорта считать каталог одного сохранения Arinst, например:
+
+```text
+LOG_5/
+  Spectrum1.csv
+  Trace2.csv
+  Trace3.csv
+  Trace4.csv
+  screencapture.bmp
+```
+
+Importer должен:
+
+- принимать каталог сохранения;
+- находить `Spectrum*.csv` и `Trace*.csv`;
+- читать metadata из комментариев CSV, включая mode, bandwidth/RBW, points и RF input, если они присутствуют;
+- поддерживать как `#Spectrum no. N`, так и `#Trace no. N`;
+- игнорировать корректные пустые trace-файлы с `#Points 0`, не считая это ошибкой всего bundle;
+- не требовать `screencapture.bmp` для анализа; screenshot является optional companion artifact;
+- приводить вход к общей внутренней модели `frequency_hz + amplitude_dbm + metadata`;
+- не считать amplitude Arinst абсолютным calibrated LTE RSRP/RSRQ/RSSI/SINR.
+
+Поддержка ZIP как production input необязательна. Committed fixtures могут храниться в компактном архиве и распаковываться test helper'ом во временный каталог.
+
+### Discovery semantics
+
+Spectrum detector должен искать не отдельные узкополосные пики, а широкополосные LTE-like hypotheses.
+
+Минимальный подход:
+
+```text
+parse samples
+ -> normalize / interpolate irregular frequency grid if needed
+ -> estimate local noise floor
+ -> identify wideband energy regions
+ -> score LTE bandwidth hypotheses: 1.4/3/5/10/15/20 MHz
+ -> constrain centers to valid LTE band/raster hypotheses
+ -> resolve overlapping/nested hypotheses
+ -> rank candidates
+```
+
+Нельзя использовать один фиксированный absolute dBm threshold для всех sweep'ов. Speed/Precision и RF conditions могут давать разные absolute levels при сохранении общей формы спектра.
+
+Для overlapping hypotheses требуется suppression/resolution: например, вложенное 5 MHz окно внутри более убедительной 10 MHz carrier hypothesis не должно автоматически становиться отдельной cell.
+
+Spectrum candidate не является подтверждённой LTE cell. Даже high-confidence candidate должен считаться только целью для SDR verification, пока не пройдены PSS/SSS + MIB.
+
+### Первые реальные fixtures
+
+В репозитории находятся два независимых B3 sweep одного диапазона 1805–1880 MHz:
+
+```text
+tests/fixtures/arinst/b3-speed/LOG_4.zip
+tests/fixtures/arinst/b3-precision/LOG_5.zip
+```
+
+Они содержат оригинальную структуру CSV-каталога Arinst без BMP screenshot, чтобы не увеличивать repository size без необходимости.
+
+`LOG_4`:
+
+```text
+Mode:       Speed
+RBW:        2.5 kHz
+Points:     800
+RF input:   15 dB
+Range:      approximately 1805.076–1879.976 MHz
+```
+
+`LOG_5`:
+
+```text
+Mode:       Precision
+RBW:        25.0 kHz
+Points:     800
+RF input:   15 dB
+Range:      approximately 1805.064–1880.111 MHz
+```
+
+В обоих bundle `Trace2.csv`, `Trace3.csv` и `Trace4.csv` являются пустыми файлами с `#Points 0`. Это intentional regression case для importer.
+
+### Ground truth и связь с IQ fixture
+
+Оба Arinst B3 sweep должны позволять spectrum detector'у сформировать высокоранговую hypothesis в области известной LTE carrier:
+
+```text
+Band:       B3
+EARFCN:     1596
+DL:         1844.6 MHz
+BW:         approximately 10 MHz
+```
+
+Точная граница/центр, оценённые непосредственно из amplitude trace, могут немного смещаться. Acceptance не должен требовать arbitrary measured center ровно 1844.600 MHz.
+
+Правильный regression criterion:
+
+- после band/raster hypothesis scoring в списке кандидатов присутствует B3 EARFCN 1596;
+- он находится среди high-ranked candidates;
+- detector не утверждает, что это confirmed cell;
+- существующая IQ fixture `tests/fixtures/lte/b3-earfcn1596/capture.cs8` затем подтверждает тот же EARFCN через настоящий LTE PHY/MIB path.
+
+Таким образом, две fixture-группы образуют связанный regression chain:
+
+```text
+Arinst spectrum fixture
+  -> spectrum candidate: B3 / EARFCN 1596
+  -> HackRF IQ fixture
+  -> MIB-confirmed B3 / EARFCN 1596 / PCI 346 / 10 MHz
+```
+
+Точное ranking threshold и confidence model следует зафиксировать после реализации baseline detector и проверки на обоих sweep, не подгоняя алгоритм под один файл.
+
+
 Главное архитектурное требование:
 
 **не запускать полный PDSCH/SIB probe на каждой точке LTE 100 kHz raster.**
