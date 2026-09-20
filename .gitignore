@@ -1,4 +1,5 @@
 /build/
+/patches/
 .DS_Store
 *.orig
 *.before-*
